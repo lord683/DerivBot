@@ -1,12 +1,14 @@
 name: Gold & Silver Sniper Bot
 
 on:
+  schedule:
+    - cron: "*/1 * * * *"  # every minute
   workflow_dispatch:
 
 jobs:
   run-sniper:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours max
+    timeout-minutes: 360  # 6 hours
 
     steps:
       - name: Checkout repo
@@ -23,5 +25,4 @@ jobs:
           pip install yfinance pandas numpy ta python-telegram-bot==20.4
 
       - name: Run Sniper Bot
-        run: |
-          python sniper_bot.py
+        run: python sniper_bot.py
