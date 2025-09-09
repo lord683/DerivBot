@@ -1,10 +1,10 @@
 name: Run Deriv Bot
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch: # Allows manual run from GitHub
+  schedule:
+    # Every 5 hours
+    - cron: "0 */5 * * *"
+  workflow_dispatch: # Allows manual run
 
 jobs:
   run-bot:
