@@ -21,6 +21,7 @@ TIMEFRAMES = {
 # -------------------- INITIALIZATION --------------------
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN and CHAT_ID else None
 sent_signals = set()
+connection_sent = False  # Track if connection message was sent
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -135,13 +136,42 @@ def send_telegram(message):
         try:
             bot.send_message(chat_id=CHAT_ID, text=message)
             logger.info(f"Message sent: {message}")
+            return True
         except Exception as e:
             logger.error(f"Telegram error: {e}")
+            return False
+    return False
+
+def send_connection_message():
+    """Send connection success message"""
+    global connection_sent
+    if not connection_sent and bot and CHAT_ID:
+        message = f"""
+✅ **BOT CONNECTED SUCCESSFULLY!** ✅
+
+🚀 **Trading Bot is Now Live**
+📊 **Monitoring:** Gold, Silver, EUR/USD, GBP/USD, USD/JPY
+⏰ **Timeframes:** 5min, 10min, 15min
+⚡ **Volatility Filter:** Active
+📈 **Strategy:** Multi-timeframe momentum
+
+🕒 **Started:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🌐 **Platform:** GitHub Actions
+
+**Status:** ✅ Online and analyzing markets...
+"""
+        if send_telegram(message):
+            connection_sent = True
+            logger.info("Connection message sent successfully")
 
 # -------------------- MAIN BOT --------------------
 def run_bot():
     logger.info("Starting volatility trading bot analysis...")
     
+    # Send connection message first
+    send_connection_message()
+    
+    # Then start analysis
     for symbol in SYMBOLS:
         for tf_name, tf_interval in TIMEFRAMES.items():
             try:
@@ -175,8 +205,9 @@ def run_bot():
 🏰 Resistance: {signal['resistance']}
 ⏰ Time: {datetime.now().strftime('%H:%M:%S')}
 """
-                            send_telegram(message)
-                            sent_signals.add(signal_key)
+                            if send_telegram(message):
+                                sent_signals.add(signal_key)
+                                logger.info(f"Signal sent for {symbol} ({tf_name})")
                 
                 time.sleep(1)
                 
@@ -186,13 +217,32 @@ def run_bot():
 
 # -------------------- EXECUTION --------------------
 if __name__ == "__main__":
-    # Send startup message
-    if bot and CHAT_ID:
-        try:
-            bot.send_message(chat_id=CHAT_ID, text="🚀 Volatility Trading Bot Started! Monitoring Gold, Silver, Forex...")
-        except:
-            pass
+    logger.info("🚀 Volatility Trading Bot Starting...")
     
-    logger.info("Volatility trading bot started")
-    run_bot()
-    logger.info("Analysis completed")
+    # Send connection message and start analysis
+    try:
+        run_bot()
+        logger.info("✅ Analysis completed successfully")
+        
+        # Send completion message if no signals found
+        if len(sent_signals) == 0:
+            no_signal_msg = f"""
+📊 **Analysis Complete**
+⏰ Time: {datetime.now().strftime('%H:%M:%S')}
+✅ Scanned: {len(SYMBOLS)} assets × {len(TIMEFRAMES)} timeframes
+🔍 Result: No high-probability signals found
+⚡ Volatility too low or conditions not met
+
+**Next scan in 5 minutes...**
+"""
+            send_telegram(no_signal_msg)
+            
+    except Exception as e:
+        error_msg = f"""
+❌ **BOT ERROR**
+🕒 Time: {datetime.now().strftime('%H:%M:%S')}
+⚠️ Error: {str(e)}
+🔧 Status: Please check logs
+"""
+        send_telegram(error_msg)
+        logger.error(f"Bot crashed: {e}")
