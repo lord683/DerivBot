@@ -1,92 +1,109 @@
-
+import os
 import json
 import time
+import requests
 import pandas as pd
-import websocket
+import numpy as np
 from datetime import datetime
-from telegram import Bot
+import websocket
 
-# 🔑 Secrets
+# ---------------- CONFIG ----------------
 DERIV_API_KEY = os.getenv("DERIV_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-bot = Bot(token=TELEGRAM_TOKEN) if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else None
-
-# Markets
-SYMBOLS = ["frxEURUSD", "frxGBPUSD", "frxUSDJPY", "R_100", "R_50"]
-
-# Timeframes (granularity in seconds)
+SYMBOLS = ["frxEURUSD", "frxGBPUSD", "frxUSDJPY", "R_50", "R_100"]  # forex + volatility
 TIMEFRAMES = {
     "5m": 300,
     "10m": 600,
     "15m": 900,
-    "30m": 1800,
+    "30m": 1800
 }
 
-# ---------------- Functions ----------------
-def send_telegram(message: str):
-    if bot:
-        try:
-            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        except Exception as e:
-            print(f"Telegram error: {e}")
+# ---------------- INDICATORS ----------------
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
 
-def get_candles(symbol, count=100, timeframe=60):
-    """Fetch candles from Deriv API"""
-    ws = websocket.create_connection("wss://ws.derivws.com/websockets/v3?app_id=1089")
-    req = {
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+# ---------------- TELEGRAM ----------------
+def send_telegram(message):
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        try:
+            requests.post(url, data=payload, timeout=10)
+        except Exception as e:
+            print("Telegram error:", e)
+
+# ---------------- DERIV DATA ----------------
+def get_deriv_candles(symbol, timeframe, count=100):
+    url = "wss://ws.derivws.com/websockets/v3?app_id=1089"
+    ws = websocket.create_connection(url)
+    
+    auth = {"authorize": DERIV_API_KEY}
+    ws.send(json.dumps(auth))
+    ws.recv()  # response
+
+    request = {
         "ticks_history": symbol,
         "count": count,
-        "granularity": timeframe,
-        "style": "candles",
         "end": "latest",
-        "subscribe": 0,
-        "api_token": DERIV_API_KEY
+        "style": "candles",
+        "granularity": timeframe
     }
-    ws.send(json.dumps(req))
-    res = ws.recv()
+    ws.send(json.dumps(request))
+    response = json.loads(ws.recv())
     ws.close()
 
-    try:
-        candles = json.loads(res)["candles"]
-        df = pd.DataFrame(candles)
-        df['open_time'] = pd.to_datetime(df['epoch'], unit='s')
+    if "candles" in response.get("history", {}):
+        df = pd.DataFrame(response["history"]["candles"])
+        df["open"] = df["open"].astype(float)
+        df["high"] = df["high"].astype(float)
+        df["low"] = df["low"].astype(float)
+        df["close"] = df["close"].astype(float)
         return df
-    except Exception as e:
-        print(f"Error fetching {symbol}: {e}")
-        return pd.DataFrame()
+    return pd.DataFrame()
 
-def calculate_ema(prices, period):
-    return prices.ewm(span=period, adjust=False).mean()
-
-def generate_signal(df, symbol, tf_name):
-    if len(df) < 30:
+# ---------------- STRATEGY ----------------
+def analyze(df, symbol, tf_name):
+    if df.empty or len(df) < 30:
         return None
 
-    closes = df['close']
-    ema_fast = calculate_ema(closes, 9).iloc[-1]
-    ema_slow = calculate_ema(closes, 21).iloc[-1]
-    current_price = closes.iloc[-1]
+    closes = df["close"]
+    ema_fast = ema(closes, 9).iloc[-1]
+    ema_slow = ema(closes, 21).iloc[-1]
+    rsi_val = rsi(closes, 14).iloc[-1]
+    price = closes.iloc[-1]
 
-    if ema_fast > ema_slow:
-        return f"📈 LONG {symbol} ({tf_name})\nEntry: {current_price:.5f} ✅ EMA9 > EMA21"
-    elif ema_fast < ema_slow:
-        return f"📉 SHORT {symbol} ({tf_name})\nEntry: {current_price:.5f} ✅ EMA9 < EMA21"
-
+    if ema_fast > ema_slow and rsi_val > 50:
+        return f"📈 LONG {symbol} ({tf_name}) @ {price:.5f} | RSI {rsi_val:.2f}"
+    elif ema_fast < ema_slow and rsi_val < 50:
+        return f"📉 SHORT {symbol} ({tf_name}) @ {price:.5f} | RSI {rsi_val:.2f}"
     return None
 
-# ---------------- Main ----------------
+# ---------------- MAIN ----------------
+def run_bot():
+    send_telegram("🤖 Deriv Bot started...")
+
+    for symbol in SYMBOLS:
+        for tf_name, tf_sec in TIMEFRAMES.items():
+            try:
+                df = get_deriv_candles(symbol, tf_sec)
+                if not df.empty:
+                    signal = analyze(df, symbol, tf_name)
+                    if signal:
+                        send_telegram(signal)
+                time.sleep(1)
+            except Exception as e:
+                send_telegram(f"⚠️ Error {symbol} {tf_name}: {str(e)}")
+
+    send_telegram(f"✅ Workflow completed at {datetime.now().strftime('%H:%M:%S')}")
+
 if __name__ == "__main__":
-    send_telegram(f"✅ Deriv Bot Connected!\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n📊 Timeframes: {', '.join(TIMEFRAMES.keys())}")
-
-    for sym in SYMBOLS:
-        for tf_name, tf_seconds in TIMEFRAMES.items():
-            df = get_candles(sym, count=100, timeframe=tf_seconds)
-            if not df.empty:
-                signal = generate_signal(df, sym, tf_name)
-                if signal:
-                    send_telegram(signal)
-            time.sleep(2)
-
-    send_telegram(f"📊 Scan complete ✅\n🕒 {datetime.now().strftime('%H:%M:%S')}")
+    run_bot()
