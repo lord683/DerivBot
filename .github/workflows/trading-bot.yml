@@ -2,8 +2,8 @@ name: Run Deriv Trading Bot
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # run every 15 minutes
-  workflow_dispatch:         # manual trigger from Actions tab
+    - cron: "*/15 * * * *"   # every 15 minutes
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -27,4 +27,4 @@ jobs:
           DERIV_API_KEY: ${{ secrets.DERIV_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python deriv_bot.py
+        run: python ./deriv_bot.py
