@@ -1,32 +1,18 @@
-name: Deriv Trading Bot
+name: Test Telegram
 
 on:
-  schedule:
-    - cron: '*/5 6-23 * * 1-5'  # Every 5 min, 6AM-11PM GMT, Mon-Fri
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger
 
 jobs:
-  run-bot:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-
-    - name: Install dependencies
-      run: |
-        pip install requests pandas numpy websocket-client
-
-    - name: Run Trading Bot
-      env:
-        DERIV_API_KEY: ${{ secrets.DERIV_API_KEY }}
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        python deriv_bot.py
+      - name: Run Telegram Test Script
+        run: python3 test-telegram.py
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
