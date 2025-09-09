@@ -1,18 +1,14 @@
-name: Run Deriv Sniper Bot
+name: Run Deriv Bot
 
 on:
-  # Manual trigger or automatic every 5 hours
-  workflow_dispatch:
-  schedule:
-    - cron: "0 */5 * * *"  # every 5 hours
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual run from GitHub
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    env:
-      DERIV_API_KEY: ${{ secrets.DERIV_API_KEY }}
-      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - name: Checkout repository
@@ -21,13 +17,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install pandas numpy requests websocket-client
 
-      - name: Run Deriv Sniper Bot
+      - name: Run Deriv Bot
+        env:
+          DERIV_API_TOKEN: ${{ secrets.DERIV_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python deriv_bot.py
