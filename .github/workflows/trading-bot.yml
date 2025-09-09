@@ -1,18 +1,26 @@
-name: Test Telegram
+name: Deriv-Bot
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:   # Allows manual trigger
 
 jobs:
-  test:
+  test-telegram:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
-      - name: Run Telegram Test Script
-        run: python3 test-telegram.py
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Run Deriv Bot
+      run: python3 deriv_bot.py
+      env:
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        DERIV_API_KEY: ${{ secrets.DERIV_API_KEY }}
