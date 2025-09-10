@@ -1,4 +1,3 @@
-# deriv_scalper_bot.py
 import os
 import json
 import time
@@ -18,12 +17,12 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 SYMBOLS = ["R_25", "R_50", "R_75", "R_100"]
 TIMEFRAMES = {"1m": 60, "5m": 300, "10m": 600, "15m": 900}
-CANDLES_COUNT = 50
+CANDLES_COUNT = 100
 SUPPLY_DEMAND_LOOKBACK = 20
 MIN_VOLATILITY_PCT = 0.3
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("deriv_scalper_bot")
+logger = logging.getLogger("deriv_bot")
 
 connected_message_sent = False
 auth_error_notified = False
@@ -130,7 +129,6 @@ def analyze_sniper(df, symbol, tf_name):
         rsi_val = float(rsi(closes,14).iloc[-1])
         high_zone, low_zone = supply_demand_zones(df)
         volatility = float(closes.pct_change().std()*100)
-        logger.info(f"Checking {symbol} {tf_name} - Price: {price:.5f}, EMA9: {ema_fast:.5f}, EMA21: {ema_slow:.5f}, RSI: {rsi_val:.2f}, Vol: {volatility:.2f}%")
         # LONG
         if ema_fast>ema_slow and 45<rsi_val<70 and price<=low_zone and volatility>MIN_VOLATILITY_PCT:
             tp = price + (high_zone-low_zone)*0.5
@@ -174,17 +172,4 @@ def run_bot():
         send_telegram("❌ DERIV_API_TOKEN not configured.")
         return
     if not connected_message_sent:
-        send_telegram("✅ *Deriv Scalper Bot Connected!* Monitoring 1m/5m/10m/15m with supply/demand.")
-        connected_message_sent = True
-    threads = []
-    for s in SYMBOLS:
-        t = Thread(target=symbol_worker, args=(s,), daemon=True)
-        t.start()
-        threads.append(t)
-        time.sleep(0.2)
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received, exiting.")
-    except Exception as
+        send_telegram("✅ *Deriv Sniper Bot Connected!* Monitoring R indices on 1m/5m/10m/15m.")
