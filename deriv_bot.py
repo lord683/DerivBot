@@ -1,4 +1,4 @@
-import os
+    import os
 import json
 import time
 import requests
@@ -16,16 +16,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 SYMBOLS = ["R_25", "R_50", "R_75", "R_100"]
-
-# ⏱️ Scalping + Sniper Timeframes
-TIMEFRAMES = {
-    "1m": 60,
-    "3m": 180,
-    "5m": 300,
-    "10m": 600,
-    "15m": 900
-}
-
+TIMEFRAMES = {"5m": 300, "10m": 600, "15m": 900}
 CANDLES_COUNT = 100
 SUPPLY_DEMAND_LOOKBACK = 20
 MIN_VOLATILITY_PCT = 0.3
@@ -181,16 +172,5 @@ def run_bot():
         send_telegram("❌ DERIV_API_TOKEN not configured.")
         return
     if not connected_message_sent:
-        send_telegram("✅ *Deriv Sniper Bot Connected!* Monitoring 1m/3m/5m/10m/15m volatility indices.")
-        connected_message_sent = True
-    # spawn workers
-    threads = []
-    for sym in SYMBOLS:
-        t = Thread(target=symbol_worker, args=(sym,), daemon=True)
-        t.start()
-        threads.append(t)
-    for t in threads:
-        t.join()
-
-if __name__ == "__main__":
-    run_bot()
+        send_telegram("✅ *Deriv Sniper Bot Connected!* Monitoring volatility indices on 5m/10m/15m.")
+        connected
