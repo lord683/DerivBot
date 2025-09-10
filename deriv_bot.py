@@ -16,7 +16,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 SYMBOLS = ["R_25", "R_50", "R_75", "R_100"]
-TIMEFRAMES = {"5m": 300, "10m": 600, "15m": 900}
+TIMEFRAMES = {"1m": 60, "5m": 300, "10m": 600, "15m": 900}
 CANDLES_COUNT = 100
 SUPPLY_DEMAND_LOOKBACK = 20
 MIN_VOLATILITY_PCT = 0.3
@@ -53,7 +53,7 @@ def send_telegram(message):
         return False
 
 # ---------------- DERIV ----------------
-def fetch_candles_with_retries(symbol, granularity, count=CANDLES_COUNT, max_attempts=3):
+def fetch_candles(symbol, granularity, count=CANDLES_COUNT, max_attempts=3):
     global auth_error_notified
     backoff_seconds = [1, 2, 4]
     last_exc = None
@@ -79,7 +79,7 @@ def fetch_candles_with_retries(symbol, granularity, count=CANDLES_COUNT, max_att
             if "error" in data:
                 last_exc = Exception(data["error"].get("message", str(data["error"])))
                 logger.warning(f"Deriv returned error for {symbol} {granularity}: {last_exc}")
-                time.sleep(backoff_seconds[min(attempt - 1, len(backoff_seconds)-1)])
+                time.sleep(backoff_seconds[min(attempt-1,len(backoff_seconds)-1)])
                 continue
             if "history" in data and "candles" in data["history"]:
                 df = pd.DataFrame(data["history"]["candles"])
@@ -87,11 +87,11 @@ def fetch_candles_with_retries(symbol, granularity, count=CANDLES_COUNT, max_att
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 return df.dropna().reset_index(drop=True)
             last_exc = Exception("No candle data in response")
-            time.sleep(backoff_seconds[min(attempt - 1, len(backoff_seconds)-1)])
+            time.sleep(backoff_seconds[min(attempt-1,len(backoff_seconds)-1)])
         except Exception as e:
             last_exc = e
             logger.warning(f"Attempt {attempt} failed for {symbol} {granularity}: {e}")
-            time.sleep(backoff_seconds[min(attempt - 1, len(backoff_seconds)-1)])
+            time.sleep(backoff_seconds[min(attempt-1,len(backoff_seconds)-1)])
     key = (symbol, granularity)
     if not fetch_failure_notified.get(key):
         fetch_failure_notified[key] = True
@@ -153,7 +153,7 @@ def symbol_worker(symbol):
     while True:
         try:
             for tf_name, tf_sec in TIMEFRAMES.items():
-                df = fetch_candles_with_retries(symbol, tf_sec, count=CANDLES_COUNT)
+                df = fetch_candles(symbol, tf_sec, count=CANDLES_COUNT)
                 if df.empty: continue
                 signal = analyze_sniper(df, symbol, tf_name)
                 if signal:
@@ -172,5 +172,19 @@ def run_bot():
         send_telegram("❌ DERIV_API_TOKEN not configured.")
         return
     if not connected_message_sent:
-        send_telegram("✅ *Deriv Sniper Bot Connected!* Monitoring volatility indices on 5m/10m/15m.")
-        connected
+        send_telegram("✅ *Deriv Sniper Bot Connected!* Monitoring volatility indices on 1m/5m/10m/15m.")
+        connected_message_sent = True
+    threads = []
+    for s in SYMBOLS:
+        t = Thread(target=symbol_worker, args=(s,), daemon=True)
+        t.start()
+        threads.append(t)
+        time.sleep(0.2)
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, exiting.")
+
+if __name__ == "__main__":
+    run_bot()
