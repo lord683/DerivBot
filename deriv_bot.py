@@ -1,4 +1,4 @@
-# deriv_bot.py
+# deriv_scalper_bot.py
 import os
 import json
 import time
@@ -18,12 +18,12 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 SYMBOLS = ["R_25", "R_50", "R_75", "R_100"]
 TIMEFRAMES = {"1m": 60, "5m": 300, "10m": 600, "15m": 900}
-CANDLES_COUNT = 100
+CANDLES_COUNT = 50
 SUPPLY_DEMAND_LOOKBACK = 20
 MIN_VOLATILITY_PCT = 0.3
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("deriv_bot")
+logger = logging.getLogger("deriv_scalper_bot")
 
 connected_message_sent = False
 auth_error_notified = False
@@ -53,7 +53,7 @@ def send_telegram(message):
         logger.error(f"Telegram send exception: {e}")
         return False
 
-# ---------------- DERIV FETCH ----------------
+# ---------------- DERIV ----------------
 def fetch_candles_with_retries(symbol, granularity, count=CANDLES_COUNT, max_attempts=3):
     global auth_error_notified
     backoff_seconds = [1, 2, 4]
@@ -77,7 +77,6 @@ def fetch_candles_with_retries(symbol, granularity, count=CANDLES_COUNT, max_att
             raw = ws.recv()
             ws.close()
             data = json.loads(raw)
-            logger.debug(f"Raw response {symbol} {granularity}: {data}")
             if "error" in data:
                 last_exc = Exception(data["error"].get("message", str(data["error"])))
                 logger.warning(f"Deriv returned error for {symbol} {granularity}: {last_exc}")
@@ -101,13 +100,16 @@ def fetch_candles_with_retries(symbol, granularity, count=CANDLES_COUNT, max_att
     return pd.DataFrame()
 
 # ---------------- INDICATORS ----------------
-def ema(series, period): return series.ewm(span=period, adjust=False).mean()
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
 def rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta>0,0)).rolling(period).mean()
     loss = (-delta.where(delta<0,0)).rolling(period).mean()
     rs = gain/loss
     return 100 - (100/(1+rs))
+
 def supply_demand_zones(df, lookback=SUPPLY_DEMAND_LOOKBACK):
     if len(df)<lookback:
         high_zone = df['high'].max()
@@ -128,14 +130,21 @@ def analyze_sniper(df, symbol, tf_name):
         rsi_val = float(rsi(closes,14).iloc[-1])
         high_zone, low_zone = supply_demand_zones(df)
         volatility = float(closes.pct_change().std()*100)
+        logger.info(f"Checking {symbol} {tf_name} - Price: {price:.5f}, EMA9: {ema_fast:.5f}, EMA21: {ema_slow:.5f}, RSI: {rsi_val:.2f}, Vol: {volatility:.2f}%")
+        # LONG
         if ema_fast>ema_slow and 45<rsi_val<70 and price<=low_zone and volatility>MIN_VOLATILITY_PCT:
             tp = price + (high_zone-low_zone)*0.5
             sl = low_zone
-            return f"🎯 *SNIPER LONG ENTRY* 🎯\n*Pair:* {symbol}\n*TF:* {tf_name}\n*Entry:* {price:.5f}\n*TP:* {tp:.5f}\n*SL:* {sl:.5f}\n*RSI:* {rsi_val:.1f}\n*Volatility:* {volatility:.2f}%\n*Time:* {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            return (f"🎯 *SNIPER LONG ENTRY* 🎯\n*Pair:* {symbol}\n*TF:* {tf_name}\n*Entry:* {price:.5f}\n"
+                    f"*TP:* {tp:.5f}\n*SL:* {sl:.5f}\n*RSI:* {rsi_val:.1f}\n*Volatility:* {volatility:.2f}%\n"
+                    f"*Time:* {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        # SHORT
         if ema_fast<ema_slow and 30<rsi_val<55 and price>=high_zone and volatility>MIN_VOLATILITY_PCT:
             tp = price - (high_zone-low_zone)*0.5
             sl = high_zone
-            return f"🎯 *SNIPER SHORT ENTRY* 🎯\n*Pair:* {symbol}\n*TF:* {tf_name}\n*Entry:* {price:.5f}\n*TP:* {tp:.5f}\n*SL:* {sl:.5f}\n*RSI:* {rsi_val:.1f}\n*Volatility:* {volatility:.2f}%\n*Time:* {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            return (f"🎯 *SNIPER SHORT ENTRY* 🎯\n*Pair:* {symbol}\n*TF:* {tf_name}\n*Entry:* {price:.5f}\n"
+                    f"*TP:* {tp:.5f}\n*SL:* {sl:.5f}\n*RSI:* {rsi_val:.1f}\n*Volatility:* {volatility:.2f}%\n"
+                    f"*Time:* {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     except Exception as e:
         logger.error(f"Strategy error for {symbol} {tf_name}: {e}")
     return None
@@ -149,7 +158,8 @@ def symbol_worker(symbol):
                 df = fetch_candles_with_retries(symbol, tf_sec, count=CANDLES_COUNT)
                 if df.empty: continue
                 signal = analyze_sniper(df, symbol, tf_name)
-                if signal: send_telegram(signal)
+                if signal:
+                    send_telegram(signal)
                 time.sleep(1)
         except Exception as e:
             logger.exception(f"Unhandled error in symbol_worker {symbol}: {e}")
@@ -164,8 +174,17 @@ def run_bot():
         send_telegram("❌ DERIV_API_TOKEN not configured.")
         return
     if not connected_message_sent:
-        send_telegram("✅ *Deriv Sniper Bot Connected!* Monitoring volatility indices 1m/5m/10m/15m.")
+        send_telegram("✅ *Deriv Scalper Bot Connected!* Monitoring 1m/5m/10m/15m with supply/demand.")
         connected_message_sent = True
     threads = []
     for s in SYMBOLS:
-        t = Thread(target=symbol
+        t = Thread(target=symbol_worker, args=(s,), daemon=True)
+        t.start()
+        threads.append(t)
+        time.sleep(0.2)
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, exiting.")
+    except Exception as
